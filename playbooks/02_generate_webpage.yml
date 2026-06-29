@@ -19,8 +19,8 @@
   gather_facts: false
 
   vars:
-    openai_model: "gpt-4o"
-    openai_api_url: "https://api.openai.com/v1/chat/completions"
+    openai_model: "granite-3-2-8b-instruct"
+    openai_api_url: "https://maas-rhdp.apps.maas.redhatworkshops.io/v1/chat/completions"
     s3_bucket_name: "aap-demo-pages-ramzidev"
     aws_region: "us-east-1"
     page_output_path: "/tmp/{{ customer_slug }}_demo_page.html"
