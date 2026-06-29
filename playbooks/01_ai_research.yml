@@ -15,8 +15,8 @@
   gather_facts: false
 
   vars:
-    openai_model: "gpt-4o"
-    openai_api_url: "https://api.openai.com/v1/chat/completions"
+    openai_model: "granite-3-2-8b-instruct"
+    openai_api_url: "https://maas-rhdp.apps.maas.redhatworkshops.io/v1/chat/completions"
     research_output_path: "/tmp/{{ customer_name | lower | replace(' ', '_') }}_research.json"
 
   tasks:
