@@ -126,7 +126,7 @@
 
     - name: Parse research JSON response
       ansible.builtin.set_fact:
-        company_research: "{{ clean_content | from_json }}"
+        company_research: "{{ clean_content }}"
 
     - name: Validate research response structure
       ansible.builtin.assert:
