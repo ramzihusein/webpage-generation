@@ -103,7 +103,7 @@
         timeout: 60
         status_code: 200
       register: openai_response
-  #    no_log: true
+      no_log: true
 
     - name: Parse research JSON response
       ansible.builtin.set_fact:
