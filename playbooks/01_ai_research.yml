@@ -1,0 +1,146 @@
+---
+# Job Template: AI Research
+# Purpose: Uses the OpenAI API to research a target company and gather
+#           technical strategy, business context, and relevant Red Hat
+#           customer references to inform the demo webpage.
+#
+# Required AAP Variables (set in Job Template or Workflow):
+#   customer_name:     "Footlocker"          (from survey)
+#   openai_api_key:    "sk-..."              (from AAP credential)
+#   openai_model:      "gpt-4o"             (default)
+
+- name: AI research — gather company intelligence
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    openai_model: "gpt-4o"
+    openai_api_url: "https://api.openai.com/v1/chat/completions"
+    research_output_path: "/tmp/{{ customer_name | lower | replace(' ', '_') }}_research.json"
+
+  tasks:
+
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - customer_name is defined and customer_name | length > 0
+          - openai_api_key is defined and openai_api_key | length > 0
+        fail_msg: "customer_name and openai_api_key must be defined"
+
+    - name: Build research prompt
+      ansible.builtin.set_fact:
+        research_prompt: |
+          You are an expert IT analyst and Red Hat solutions architect. Research the company "{{ customer_name }}"
+          and provide a comprehensive technology assessment in valid JSON format only.
+
+          Return ONLY a JSON object (no markdown, no explanation) with exactly these keys:
+
+          {
+            "company_name": "{{ customer_name }}",
+            "industry": "<industry vertical>",
+            "company_summary": "<2-3 sentence description of what the company does>",
+            "employee_count": "<approximate employee count>",
+            "annual_revenue": "<approximate annual revenue>",
+            "tech_stack_summary": "<2-3 sentences describing their known or likely technology stack>",
+            "digital_transformation_priorities": [
+              "<priority 1>",
+              "<priority 2>",
+              "<priority 3>"
+            ],
+            "it_challenges": [
+              "<challenge 1>",
+              "<challenge 2>",
+              "<challenge 3>"
+            ],
+            "automation_use_cases": [
+              {
+                "title": "<use case title>",
+                "description": "<2 sentence description of the use case specific to {{ customer_name }}>",
+                "ansible_collections": ["<relevant collection>"],
+                "estimated_hours_saved_per_year": <number>,
+                "category": "<Infrastructure|Security|Network|Cloud|AppDev>"
+              }
+            ],
+            "red_hat_customer_references": [
+              {
+                "company": "<real Red Hat customer in similar industry or with similar challenges>",
+                "outcome": "<specific quantified outcome from public Red Hat case study>",
+                "relevance": "<1 sentence on why this is relevant to {{ customer_name }}>"
+              }
+            ],
+            "business_value_summary": {
+              "productivity_gain_percent": <number between 20-60>,
+              "mttr_reduction_percent": <number between 30-70>,
+              "deployment_frequency_increase_percent": <number between 50-200>,
+              "estimated_fte_hours_saved_per_year": <number>,
+              "key_value_statement": "<1 compelling sentence on the primary business value for {{ customer_name }}>"
+            },
+            "executive_hook": "<1-2 sentence compelling opening statement tailored to {{ customer_name }}'s situation that would resonate with a CIO or VP of IT>"
+          }
+
+          For automation_use_cases, provide exactly 5 use cases most relevant to {{ customer_name }}.
+          For red_hat_customer_references, provide exactly 3 real public Red Hat customer stories.
+          All numbers must be realistic and defensible based on public Red Hat ROI data.
+
+    - name: Call OpenAI API for company research
+      ansible.builtin.uri:
+        url: "{{ openai_api_url }}"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ openai_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          model: "{{ openai_model }}"
+          temperature: 0.3
+          max_tokens: 2000
+          messages:
+            - role: "system"
+              content: "You are an expert IT analyst. Always respond with valid JSON only. No markdown fences, no explanation text."
+            - role: "user"
+              content: "{{ research_prompt }}"
+        timeout: 60
+        status_code: 200
+      register: openai_response
+      no_log: true
+
+    - name: Parse research JSON response
+      ansible.builtin.set_fact:
+        company_research: "{{ openai_response.json.choices[0].message.content | from_json }}"
+
+    - name: Validate research response structure
+      ansible.builtin.assert:
+        that:
+          - company_research.company_name is defined
+          - company_research.automation_use_cases | length == 5
+          - company_research.red_hat_customer_references | length == 3
+          - company_research.business_value_summary is defined
+        fail_msg: "OpenAI response did not return expected structure. Check the prompt and model."
+
+    - name: Save research output to file
+      ansible.builtin.copy:
+        content: "{{ company_research | to_nice_json }}"
+        dest: "{{ research_output_path }}"
+        mode: '0600'
+
+    - name: Set workflow artifact facts for downstream jobs
+      ansible.builtin.set_stats:
+        data:
+          customer_name: "{{ customer_name }}"
+          customer_slug: "{{ customer_name | lower | replace(' ', '-') | replace('_', '-') }}"
+          company_industry: "{{ company_research.industry }}"
+          company_summary: "{{ company_research.company_summary }}"
+          executive_hook: "{{ company_research.executive_hook }}"
+          research_output_path: "{{ research_output_path }}"
+          research_json: "{{ company_research | to_json }}"
+      delegate_to: localhost
+
+    - name: Print research summary
+      ansible.builtin.debug:
+        msg:
+          - "Company: {{ company_research.company_name }}"
+          - "Industry: {{ company_research.industry }}"
+          - "Use cases identified: {{ company_research.automation_use_cases | length }}"
+          - "Customer references found: {{ company_research.red_hat_customer_references | length }}"
+          - "Key value statement: {{ company_research.business_value_summary.key_value_statement }}"

@@ -1,0 +1,9 @@
+README.md
+workflow_definition.yml
+
+# Secrets and sensitive files
+*.vault
+vault-password.txt
+.env
+*_secrets.yml
+/tmp/

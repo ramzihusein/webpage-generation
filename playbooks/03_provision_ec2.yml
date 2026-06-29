@@ -1,0 +1,179 @@
+---
+# Job Template: EC2 Provisioning
+# Purpose: Provisions a dedicated t3.micro web server for the customer demo,
+#           allocates an Elastic IP, and adds the instance to AAP dynamic inventory.
+#
+# Required AAP Variables (from workflow artifacts):
+#   customer_name:   "Footlocker"
+#   customer_slug:   "footlocker"
+#
+# Required AAP Variables (set in Job Template):
+#   aws_region:          "us-east-1"
+#   vpc_id:              from your Terraform outputs
+#   subnet_id:           public subnet ID from Terraform outputs
+#   demo_sg_id:          security group ID for demo web servers (see below)
+#   rhel10_ami_id:       RHEL 10 AMI ID
+#   key_pair_name:       your EC2 key pair name
+#   aap_controller_url:  https://controller.aap.ramzidev.com
+#   aap_token:           AAP API token (from AAP credential)
+
+- name: EC2 provisioning — launch customer demo web server
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    aws_region: "us-east-1"
+    instance_type: "t3.micro"
+    instance_name: "aap-demo-{{ customer_slug }}"
+
+  tasks:
+
+    - name: Check if demo instance already exists for this customer
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:CustomerSlug": "{{ customer_slug }}"
+          "tag:Project": "aap-customer-demo"
+          instance-state-name: ["running", "stopped", "pending"]
+      register: existing_instances
+
+    - name: Set fact — existing instance found
+      ansible.builtin.set_fact:
+        instance_already_exists: "{{ existing_instances.instances | length > 0 }}"
+        existing_instance_id: "{{ existing_instances.instances[0].instance_id | default('') }}"
+
+    - name: Launch new EC2 instance (skip if already exists)
+      amazon.aws.ec2_instance:
+        name: "{{ instance_name }}"
+        region: "{{ aws_region }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ rhel10_ami_id }}"
+        key_name: "{{ key_pair_name }}"
+        vpc_subnet_id: "{{ subnet_id }}"
+        security_group: "{{ demo_sg_id }}"
+        network:
+          assign_public_ip: false
+        volumes:
+          - device_name: /dev/sda1
+            ebs:
+              volume_size: 20
+              volume_type: gp3
+              delete_on_termination: true
+              encrypted: true
+        tags:
+          Name: "{{ instance_name }}"
+          CustomerSlug: "{{ customer_slug }}"
+          CustomerName: "{{ customer_name }}"
+          Project: "aap-customer-demo"
+          ManagedBy: "ansible"
+          CreatedAt: "{{ ansible_date_time.iso8601 | default(lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ')) }}"
+        wait: true
+        wait_timeout: 300
+        state: running
+        user_data: |
+          #!/bin/bash
+          hostnamectl set-hostname {{ customer_slug }}-demo
+      register: ec2_result
+      when: not instance_already_exists
+
+    - name: Set instance ID fact
+      ansible.builtin.set_fact:
+        demo_instance_id: >-
+          {{
+            existing_instance_id
+            if instance_already_exists
+            else ec2_result.instances[0].instance_id
+          }}
+
+    - name: Wait for instance to be running
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+        instance_ids: ["{{ demo_instance_id }}"]
+      register: instance_info
+      until: instance_info.instances[0].state.name == 'running'
+      retries: 30
+      delay: 10
+
+    - name: Check for existing Elastic IP for this customer
+      amazon.aws.ec2_eip_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:CustomerSlug": "{{ customer_slug }}"
+      register: existing_eip
+
+    - name: Allocate new Elastic IP (skip if already exists)
+      amazon.aws.ec2_eip:
+        region: "{{ aws_region }}"
+        state: present
+        tags:
+          CustomerSlug: "{{ customer_slug }}"
+          CustomerName: "{{ customer_name }}"
+          Project: "aap-customer-demo"
+          ManagedBy: "ansible"
+      register: new_eip
+      when: existing_eip.addresses | length == 0
+
+    - name: Set Elastic IP fact
+      ansible.builtin.set_fact:
+        demo_eip: >-
+          {{
+            existing_eip.addresses[0].public_ip
+            if existing_eip.addresses | length > 0
+            else new_eip.public_ip
+          }}
+        demo_eip_alloc_id: >-
+          {{
+            existing_eip.addresses[0].allocation_id
+            if existing_eip.addresses | length > 0
+            else new_eip.allocation_id
+          }}
+
+    - name: Associate Elastic IP to instance
+      amazon.aws.ec2_eip:
+        region: "{{ aws_region }}"
+        device_id: "{{ demo_instance_id }}"
+        ip: "{{ demo_eip }}"
+        state: present
+
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for:
+        host: "{{ demo_eip }}"
+        port: 22
+        delay: 15
+        timeout: 180
+        state: started
+
+    - name: Add new instance to in-memory inventory for next jobs
+      ansible.builtin.add_host:
+        name: "{{ demo_eip }}"
+        groups:
+          - demo_webservers
+          - "{{ customer_slug }}"
+        ansible_user: ec2-user
+        ansible_ssh_private_key_file: "{{ ssh_private_key_path | default('/var/lib/awx/.ssh/demo_key.pem') }}"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        customer_name: "{{ customer_name }}"
+        customer_slug: "{{ customer_slug }}"
+        s3_bucket_name: "{{ s3_bucket_name }}"
+        s3_page_key: "{{ s3_page_key }}"
+
+    - name: Set artifact facts for downstream jobs
+      ansible.builtin.set_stats:
+        data:
+          demo_instance_id: "{{ demo_instance_id }}"
+          demo_eip: "{{ demo_eip }}"
+          demo_eip_alloc_id: "{{ demo_eip_alloc_id }}"
+          customer_name: "{{ customer_name }}"
+          customer_slug: "{{ customer_slug }}"
+          s3_bucket_name: "{{ s3_bucket_name }}"
+          s3_page_key: "{{ s3_page_key }}"
+      delegate_to: localhost
+
+    - name: Print provisioning summary
+      ansible.builtin.debug:
+        msg:
+          - "Instance ID: {{ demo_instance_id }}"
+          - "Elastic IP: {{ demo_eip }}"
+          - "Instance: {{ 'already existed' if instance_already_exists else 'newly created' }}"
+          - "Ready for web server configuration"

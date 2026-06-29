@@ -1,0 +1,102 @@
+---
+# Job Template: Demo Teardown (optional)
+# Purpose: Removes all AWS resources provisioned for a specific customer demo.
+#           Run this after the meeting to avoid accumulating idle instances.
+#
+# Survey: customer_name (same as creation workflow)
+#
+# Required AAP Variables:
+#   customer_slug:   "footlocker"  (or set via survey)
+#   aws_region:      "us-east-1"
+#   route53_zone_id: your hosted zone ID
+#   domain_name:     "ramzidev.com"
+#   s3_bucket_name:  "aap-demo-pages-ramzidev"
+
+- name: Demo teardown — remove all AWS resources for a customer demo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    aws_region: "us-east-1"
+    domain_name: "ramzidev.com"
+    s3_bucket_name: "aap-demo-pages-ramzidev"
+    customer_slug: "{{ customer_name | lower | replace(' ', '-') | replace('_', '-') }}"
+    demo_fqdn: "{{ customer_slug }}.{{ domain_name }}"
+
+  tasks:
+
+    - name: Confirm teardown (safety check)
+      ansible.builtin.pause:
+        prompt: >
+          WARNING: This will permanently delete all AWS resources for {{ customer_name }}.
+          Type 'yes' to confirm, anything else to cancel.
+      register: teardown_confirm
+      when: not (skip_confirm | default(false) | bool)
+
+    - name: Abort if not confirmed
+      ansible.builtin.fail:
+        msg: "Teardown cancelled."
+      when:
+        - not (skip_confirm | default(false) | bool)
+        - teardown_confirm.user_input | trim | lower != 'yes'
+
+    - name: Find demo EC2 instance
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:CustomerSlug": "{{ customer_slug }}"
+          "tag:Project": "aap-customer-demo"
+          instance-state-name: ["running", "stopped", "pending"]
+      register: demo_instances
+
+    - name: Find demo Elastic IP
+      amazon.aws.ec2_eip_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:CustomerSlug": "{{ customer_slug }}"
+      register: demo_eips
+
+    - name: Disassociate and release Elastic IP
+      amazon.aws.ec2_eip:
+        region: "{{ aws_region }}"
+        ip: "{{ item.public_ip }}"
+        state: absent
+        release_on_disassociation: true
+      loop: "{{ demo_eips.addresses }}"
+      when: demo_eips.addresses | length > 0
+
+    - name: Terminate EC2 instance
+      amazon.aws.ec2_instance:
+        region: "{{ aws_region }}"
+        instance_ids: "{{ demo_instances.instances | map(attribute='instance_id') | list }}"
+        state: terminated
+        wait: true
+      when: demo_instances.instances | length > 0
+
+    - name: Remove S3 demo page objects
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "{{ customer_slug }}/index.html"
+        mode: delobj
+        region: "{{ aws_region }}"
+      failed_when: false
+
+    - name: Remove Route 53 DNS record
+      amazon.aws.route53:
+        state: absent
+        zone: "{{ domain_name }}"
+        record: "{{ demo_fqdn }}"
+        type: A
+        ttl: 60
+        value: "{{ demo_eips.addresses[0].public_ip | default('0.0.0.0') }}"
+      failed_when: false
+
+    - name: Print teardown summary
+      ansible.builtin.debug:
+        msg:
+          - "Teardown complete for: {{ customer_name }}"
+          - "Removed instances: {{ demo_instances.instances | map(attribute='instance_id') | list }}"
+          - "Released EIPs: {{ demo_eips.addresses | map(attribute='public_ip') | list }}"
+          - "DNS record {{ demo_fqdn }} removed"
+          - "S3 page objects removed from s3://{{ s3_bucket_name }}/{{ customer_slug }}/"

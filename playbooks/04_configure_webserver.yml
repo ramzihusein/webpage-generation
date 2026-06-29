@@ -1,0 +1,179 @@
+---
+# Job Template: Web Server Configuration
+# Purpose: Installs and configures nginx on the demo EC2 instance,
+#           pulls the generated HTML from S3, and sets up TLS via certbot.
+#
+# Inventory: Uses the dynamic inventory group "demo_webservers" added by Job 3,
+#            OR set the target host explicitly via the AAP Job Template limit:
+#            limit: "{{ demo_eip }}"
+#
+# Required AAP Variables (from workflow artifacts):
+#   customer_name:    "Footlocker"
+#   customer_slug:    "footlocker"
+#   demo_eip:         the instance public IP
+#   s3_bucket_name:   "aap-demo-pages-ramzidev"
+#   s3_page_key:      "footlocker/index.html"
+#
+# Required AAP Variables (set in Job Template):
+#   aws_region:       "us-east-1"
+#   domain_name:      "ramzidev.com"
+#   certbot_email:    "your@email.com"
+
+- name: Web server configuration — nginx + TLS + deploy demo page
+  hosts: demo_webservers
+  become: true
+  gather_facts: true
+
+  vars:
+    aws_region: "us-east-1"
+    domain_name: "ramzidev.com"
+    vhost_fqdn: "{{ customer_slug }}.{{ domain_name }}"
+    web_root: "/var/www/{{ vhost_fqdn }}"
+    nginx_conf_path: "/etc/nginx/conf.d/{{ customer_slug }}.conf"
+    html_dest: "{{ web_root }}/index.html"
+
+  tasks:
+
+    - name: Ensure system is fully booted and cloud-init complete
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Register RHEL with subscription manager
+      community.general.redhat_subscription:
+        state: present
+        username: "{{ rh_username }}"
+        password: "{{ rh_password }}"
+        auto_attach: true
+      when: ansible_distribution == "RedHat"
+      no_log: true
+
+    - name: Enable required repositories
+      community.general.rhsm_repository:
+        name:
+          - rhel-10-for-x86_64-baseos-rpms
+          - rhel-10-for-x86_64-appstream-rpms
+        state: enabled
+      when: ansible_distribution == "RedHat"
+
+    - name: Install required packages
+      ansible.builtin.dnf:
+        name:
+          - nginx
+          - python3-boto3
+          - python3-botocore
+          - certbot
+          - python3-certbot-nginx
+          - firewalld
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Ensure firewalld is running
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Open HTTP and HTTPS in firewall
+      ansible.posix.firewalld:
+        service: "{{ item }}"
+        permanent: true
+        state: enabled
+        immediate: true
+      loop:
+        - http
+        - https
+
+    - name: Create web root directory
+      ansible.builtin.file:
+        path: "{{ web_root }}"
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: '0755'
+
+    - name: Download HTML page from S3
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "{{ s3_page_key }}"
+        dest: "{{ html_dest }}"
+        mode: get
+        region: "{{ aws_region }}"
+
+    - name: Set correct ownership on HTML file
+      ansible.builtin.file:
+        path: "{{ html_dest }}"
+        owner: nginx
+        group: nginx
+        mode: '0644'
+
+    - name: Configure nginx virtual host (HTTP — pre-TLS)
+      ansible.builtin.template:
+        src: nginx_vhost_http.conf.j2
+        dest: "{{ nginx_conf_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: Remove default nginx config to avoid conflicts
+      ansible.builtin.file:
+        path: /etc/nginx/conf.d/default.conf
+        state: absent
+      notify: Reload nginx
+
+    - name: Ensure nginx is running
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Flush handlers before certbot (nginx must be running)
+      ansible.builtin.meta: flush_handlers
+
+    - name: Obtain Let's Encrypt TLS certificate via certbot
+      ansible.builtin.command: >
+        certbot --nginx
+        -d {{ vhost_fqdn }}
+        --non-interactive
+        --agree-tos
+        --email {{ certbot_email }}
+        --redirect
+      args:
+        creates: "/etc/letsencrypt/live/{{ vhost_fqdn }}/fullchain.pem"
+      register: certbot_result
+      notify: Reload nginx
+
+    - name: Set up certbot auto-renewal cron
+      ansible.builtin.cron:
+        name: "certbot renew {{ vhost_fqdn }}"
+        minute: "0"
+        hour: "3"
+        day: "*/7"
+        job: "certbot renew --quiet --nginx 2>&1 | logger -t certbot"
+        state: present
+
+    - name: Verify page is serving correctly
+      ansible.builtin.uri:
+        url: "http://{{ demo_eip }}"
+        follow_redirects: safe
+        status_code: [200, 301, 302]
+        timeout: 15
+      delegate_to: localhost
+      register: page_check
+      failed_when: false
+
+    - name: Print web server summary
+      ansible.builtin.debug:
+        msg:
+          - "Web server configured for: {{ vhost_fqdn }}"
+          - "HTML deployed from: s3://{{ s3_bucket_name }}/{{ s3_page_key }}"
+          - "TLS: {{ 'obtained' if certbot_result is not skipped else 'already existed' }}"
+          - "HTTP check status: {{ page_check.status | default('unreachable') }}"
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded

@@ -1,0 +1,168 @@
+---
+# Job Template: Webpage Generation
+# Purpose: Takes the AI research output and generates a polished, branded
+#           HTML demo webpage, then uploads it to S3 for deployment.
+#
+# Required AAP Variables (passed from Job 1 via set_stats):
+#   customer_name:       "Footlocker"
+#   customer_slug:       "footlocker"
+#   research_json:       <JSON string from Job 1>
+#   openai_api_key:      from AAP credential
+#
+# Required AAP Variables (set in Job Template):
+#   s3_bucket_name:      "aap-demo-pages-ramzidev"
+#   aws_region:          "us-east-1"
+
+- name: Webpage generation — build and upload customer demo page
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    openai_model: "gpt-4o"
+    openai_api_url: "https://api.openai.com/v1/chat/completions"
+    s3_bucket_name: "aap-demo-pages-ramzidev"
+    aws_region: "us-east-1"
+    page_output_path: "/tmp/{{ customer_slug }}_demo_page.html"
+
+  tasks:
+
+    - name: Parse research JSON from workflow artifact
+      ansible.builtin.set_fact:
+        company_research: "{{ research_json | from_json }}"
+
+    - name: Build webpage generation prompt
+      ansible.builtin.set_fact:
+        webpage_prompt: |
+          You are an expert web designer and Red Hat solutions architect.
+          Generate a complete, single-file HTML page for a customer-facing Ansible Automation Platform demo.
+
+          Company data:
+          {{ research_json }}
+
+          Requirements:
+          - Single self-contained HTML file (all CSS inline in <style>, no external dependencies except Google Fonts)
+          - Modern, professional design using Red Hat brand colors: primary #EE0000 (Red Hat red), dark #151515, accent #0066CC
+          - Google Fonts: Inter for body, load via @import in <style>
+          - Fully responsive (mobile-friendly)
+          - No JavaScript required for core content
+
+          Page must contain these exact sections in this order:
+
+          1. HEADER: Red Hat logo (text-based: "Red Hat" in red), company name prominently displayed,
+             tagline "Ansible Automation Platform — Built for {{ company_research.company_name }}"
+
+          2. EXECUTIVE SUMMARY: The executive_hook text, company summary, industry context.
+             Include a "Key Metrics" row with 3 stats from business_value_summary
+             (e.g. "{{ company_research.business_value_summary.productivity_gain_percent }}% productivity gain",
+             "{{ company_research.business_value_summary.mttr_reduction_percent }}% MTTR reduction",
+             "{{ company_research.business_value_summary.estimated_fte_hours_saved_per_year }} hours saved/year")
+
+          3. TOP 5 AUTOMATION USE CASES: Cards for each of the 5 use cases in automation_use_cases.
+             Each card: title, description, category badge (color-coded by category), hours saved,
+             relevant Ansible collections listed as pills.
+
+          4. QUANTIFIED BUSINESS VALUE: Visual metrics section showing all values from business_value_summary.
+             Include a "What this means for {{ company_research.company_name }}" narrative paragraph.
+
+          5. CUSTOMER REFERENCES: 3 cards from red_hat_customer_references. Each card:
+             company name, outcome (bold), relevance sentence, a "Read case study →" link (href="#").
+
+          6. TECHNOLOGY OVERVIEW: 2-column section — left: "Your Challenges" (bullet list from it_challenges),
+             right: "How AAP Addresses Them" (matching AAP capability for each challenge).
+
+          7. FOOTER: "Prepared by Red Hat | ramzidev.com | Confidential — for discussion purposes only"
+             Current date generated dynamically via JavaScript: document.write(new Date().toLocaleDateString())
+
+          Design details:
+          - Use CSS custom properties (--rh-red, --rh-dark, --rh-blue, --rh-gray, --rh-light)
+          - Section alternates: white and #F5F5F5 backgrounds
+          - Cards: white background, subtle box-shadow, 8px border-radius, 4px left border in Red Hat red
+          - Category badges: color-coded pills (Infrastructure=#0066CC, Security=#3E8635, Network=#F0AB00, Cloud=#8481DD, AppDev=#EC7A08)
+          - Metrics: large bold numbers in Red Hat red, label underneath in gray
+          - Mobile: stack columns, reduce font sizes below 768px
+
+          Return ONLY the complete HTML file content. No explanation, no markdown fences.
+          Start with <!DOCTYPE html> and end with </html>.
+
+    - name: Call OpenAI API for webpage generation
+      ansible.builtin.uri:
+        url: "{{ openai_api_url }}"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ openai_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          model: "{{ openai_model }}"
+          temperature: 0.4
+          max_tokens: 4096
+          messages:
+            - role: "system"
+              content: "You are an expert web designer. Return only raw HTML. Never use markdown code fences. Never include any text before <!DOCTYPE html> or after </html>."
+            - role: "user"
+              content: "{{ webpage_prompt }}"
+        timeout: 90
+        status_code: 200
+      register: webpage_response
+      no_log: true
+
+    - name: Extract HTML content
+      ansible.builtin.set_fact:
+        page_html: "{{ webpage_response.json.choices[0].message.content | trim }}"
+
+    - name: Validate response looks like HTML
+      ansible.builtin.assert:
+        that:
+          - page_html | lower is search('<!doctype html>')
+          - page_html | lower is search('</html>')
+          - page_html | lower is search('ansible')
+          - page_html | lower is search(customer_name | lower)
+        fail_msg: "OpenAI did not return valid HTML. Check the generation prompt."
+
+    - name: Save HTML to local temp file
+      ansible.builtin.copy:
+        content: "{{ page_html }}"
+        dest: "{{ page_output_path }}"
+        mode: '0644'
+
+    - name: Create S3 bucket for demo pages (idempotent)
+      amazon.aws.s3_bucket:
+        name: "{{ s3_bucket_name }}"
+        region: "{{ aws_region }}"
+        state: present
+        public_access:
+          block_public_acls: false
+          block_public_policy: false
+          ignore_public_acls: false
+          restrict_public_buckets: false
+        tags:
+          Project: "aap-demo"
+          ManagedBy: "ansible"
+      register: s3_bucket_result
+
+    - name: Upload HTML page to S3
+      amazon.aws.s3_object:
+        bucket: "{{ s3_bucket_name }}"
+        object: "{{ customer_slug }}/index.html"
+        src: "{{ page_output_path }}"
+        mode: put
+        content_type: "text/html; charset=utf-8"
+        region: "{{ aws_region }}"
+
+    - name: Set artifact facts for downstream jobs
+      ansible.builtin.set_stats:
+        data:
+          customer_slug: "{{ customer_slug }}"
+          customer_name: "{{ customer_name }}"
+          s3_bucket_name: "{{ s3_bucket_name }}"
+          s3_page_key: "{{ customer_slug }}/index.html"
+          demo_url: "https://{{ customer_slug }}.ramzidev.com"
+      delegate_to: localhost
+
+    - name: Print generation summary
+      ansible.builtin.debug:
+        msg:
+          - "Page generated for: {{ customer_name }}"
+          - "Uploaded to: s3://{{ s3_bucket_name }}/{{ customer_slug }}/index.html"
+          - "Demo URL will be: https://{{ customer_slug }}.ramzidev.com"

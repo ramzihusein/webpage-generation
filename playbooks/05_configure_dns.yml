@@ -1,0 +1,100 @@
+---
+# Job Template: DNS Configuration
+# Purpose: Creates (or updates) the Route 53 A record pointing
+#           <customer_slug>.ramzidev.com to the demo instance Elastic IP.
+#           After this job, the demo URL is live.
+#
+# Required AAP Variables (from workflow artifacts):
+#   customer_slug:   "footlocker"
+#   customer_name:   "Footlocker"
+#   demo_eip:        Elastic IP of the demo web server
+#
+# Required AAP Variables (set in Job Template):
+#   route53_zone_id: your Route 53 hosted zone ID for ramzidev.com
+#   domain_name:     "ramzidev.com"
+
+- name: DNS configuration — create Route 53 A record for demo page
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    domain_name: "ramzidev.com"
+    dns_ttl: 60
+    demo_fqdn: "{{ customer_slug }}.{{ domain_name }}"
+
+  tasks:
+
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - customer_slug is defined and customer_slug | length > 0
+          - demo_eip is defined and demo_eip | length > 0
+          - route53_zone_id is defined and route53_zone_id | length > 0
+        fail_msg: "customer_slug, demo_eip, and route53_zone_id must all be defined"
+
+    - name: Check if DNS record already exists
+      amazon.aws.route53:
+        state: get
+        zone: "{{ domain_name }}"
+        record: "{{ demo_fqdn }}"
+        type: A
+      register: existing_dns
+      failed_when: false
+
+    - name: Create or update Route 53 A record
+      amazon.aws.route53:
+        state: present
+        zone: "{{ domain_name }}"
+        record: "{{ demo_fqdn }}"
+        type: A
+        ttl: "{{ dns_ttl }}"
+        value: "{{ demo_eip }}"
+        overwrite: true
+        comment: "AAP demo page for {{ customer_name }} — managed by Ansible"
+      register: dns_result
+
+    - name: Wait for DNS propagation (check from localhost)
+      ansible.builtin.command: >
+        dig +short {{ demo_fqdn }} @8.8.8.8
+      register: dns_check
+      until: dns_check.stdout.strip() == demo_eip
+      retries: 20
+      delay: 15
+      changed_when: false
+      failed_when: false
+
+    - name: Verify demo page is reachable at final URL
+      ansible.builtin.uri:
+        url: "http://{{ demo_fqdn }}"
+        follow_redirects: all
+        status_code: 200
+        timeout: 20
+      register: final_check
+      retries: 5
+      delay: 10
+      until: final_check.status == 200
+      failed_when: false
+
+    - name: Set final workflow artifact
+      ansible.builtin.set_stats:
+        data:
+          demo_url: "https://{{ demo_fqdn }}"
+          demo_url_http: "http://{{ demo_fqdn }}"
+          customer_name: "{{ customer_name }}"
+          customer_slug: "{{ customer_slug }}"
+          demo_eip: "{{ demo_eip }}"
+      delegate_to: localhost
+
+    - name: Print final demo URL
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - " DEMO PAGE READY"
+          - "=========================================="
+          - " Customer:  {{ customer_name }}"
+          - " URL:       https://{{ demo_fqdn }}"
+          - " IP:        {{ demo_eip }}"
+          - " DNS:       {{ 'propagated' if dns_check.stdout.strip() == demo_eip else 'propagating (may take 1-2 min)' }}"
+          - " HTTP:      {{ 'reachable' if final_check.status | default(0) == 200 else 'DNS still propagating' }}"
+          - "=========================================="
