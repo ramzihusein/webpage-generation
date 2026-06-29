@@ -129,9 +129,8 @@
       amazon.aws.s3_bucket:
         name: "{{ s3_bucket_name }}"
         region: "{{ aws_region }}"
+        endpoint_url: "https://s3.{{ aws_region }}.amazonaws.com"
         state: present
-        create_bucket_config:
-          LocationConstraint: "{{ aws_region }}"
         public_access:
           block_public_acls: false
           block_public_policy: false
