@@ -97,7 +97,11 @@
           max_tokens: 2000
           messages:
             - role: "system"
-              content: "You are an expert IT analyst. Always respond with valid JSON only. No markdown fences, no explanation text."
+              content: >
+                You are an expert IT analyst. Always respond with valid JSON only.
+                No markdown fences. No explanation text. No apostrophes in string values —
+                use the Unicode right single quotation mark (') or rephrase to avoid them.
+                Ensure all strings are properly escaped.
             - role: "user"
               content: "{{ research_prompt }}"
         timeout: 60
@@ -105,9 +109,24 @@
       register: openai_response
       no_log: true
 
+    - name: Extract raw content from OpenAI response
+      ansible.builtin.set_fact:
+        raw_content: "{{ openai_response.json.choices[0].message.content | trim }}"
+
+    - name: Strip markdown code fences if present
+      ansible.builtin.set_fact:
+        clean_content: >-
+          {{
+            raw_content
+            | regex_replace('^```json\s*', '')
+            | regex_replace('^```\s*', '')
+            | regex_replace('\s*```$', '')
+            | trim
+          }}
+
     - name: Parse research JSON response
       ansible.builtin.set_fact:
-        company_research: "{{ openai_response.json.choices[0].message.content | from_json }}"
+        company_research: "{{ clean_content | from_json }}"
 
     - name: Validate research response structure
       ansible.builtin.assert:
