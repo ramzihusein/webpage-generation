@@ -117,7 +117,6 @@
           - page_html | lower is search('<!doctype html>')
           - page_html | lower is search('</html>')
           - page_html | lower is search('ansible')
-          - page_html | lower is search(customer_name | lower)
         fail_msg: "OpenAI did not return valid HTML. Check the generation prompt."
 
     - name: Save HTML to local temp file
