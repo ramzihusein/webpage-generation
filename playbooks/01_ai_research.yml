@@ -147,7 +147,7 @@
       ansible.builtin.set_stats:
         data:
           customer_name: "{{ customer_name }}"
-          customer_slug: "{{ customer_name | lower | replace(' ', '-') | replace('_', '-') }}"
+          customer_slug: "{{ customer_name | lower | replace(' ', '_') | replace('-', '_') }}"
           company_industry: "{{ company_research.industry }}"
           company_summary: "{{ company_research.company_summary }}"
           executive_hook: "{{ company_research.executive_hook }}"
