@@ -41,56 +41,56 @@
     - name: Build webpage generation prompt
       ansible.builtin.set_fact:
         webpage_prompt: |
-          You are an expert web designer and Red Hat solutions architect.
-          Generate a complete, single-file HTML page for a customer-facing Ansible Automation Platform demo.
+          Generate a complete single-file HTML page. Use ONLY the data below.
+          Do NOT use any placeholder syntax like {variable} or {{variable}}.
+          Write out every value explicitly in the HTML.
+          Generate ALL 5 use case cards and ALL 3 customer reference cards in full.
+          No comments like "repeat for other items".
 
-          Company data:
-          {{ research_json }}
+          COMPANY: {{ company_research.company_name }}
+          INDUSTRY: {{ company_research.industry }}
+          EXECUTIVE HOOK: {{ company_research.executive_hook }}
+          COMPANY SUMMARY: {{ company_research.company_summary }}
+          EMPLOYEE COUNT: {{ company_research.employee_count }}
+          ANNUAL REVENUE: {{ company_research.annual_revenue }}
+          PRODUCTIVITY GAIN: {{ company_research.business_value_summary.productivity_gain_percent }}%
+          MTTR REDUCTION: {{ company_research.business_value_summary.mttr_reduction_percent }}%
+          HOURS SAVED: {{ company_research.business_value_summary.estimated_fte_hours_saved_per_year }}
+          DEPLOYMENT FREQUENCY INCREASE: {{ company_research.business_value_summary.deployment_frequency_increase_percent }}%
+          KEY VALUE STATEMENT: {{ company_research.business_value_summary.key_value_statement }}
 
-          Requirements:
-          - Single self-contained HTML file (all CSS inline in <style>, no external dependencies except Google Fonts)
-          - Modern, professional design using Red Hat brand colors: primary #EE0000 (Red Hat red), dark #151515, accent #0066CC
-          - Google Fonts: Inter for body, load via @import in <style>
-          - Fully responsive (mobile-friendly)
-          - No JavaScript required for core content
+          IT CHALLENGES:
+          {% for challenge in company_research.it_challenges %}
+          - {{ challenge }}
+          {% endfor %}
 
-          Page must contain these exact sections in this order:
+          USE CASES:
+          {% for uc in company_research.automation_use_cases %}
+          {{ loop.index }}. TITLE: {{ uc.title }}
+             DESCRIPTION: {{ uc.description }}
+             CATEGORY: {{ uc.category }}
+             HOURS SAVED: {{ uc.estimated_hours_saved_per_year }}
+             COLLECTIONS: {{ uc.ansible_collections | join(', ') }}
+          {% endfor %}
 
-          1. HEADER: Red Hat logo (text-based: "Red Hat" in red), company name prominently displayed,
-             tagline "Ansible Automation Platform — Built for {{ company_research.company_name }}"
+          CUSTOMER REFERENCES:
+          {% for ref in company_research.red_hat_customer_references %}
+          {{ loop.index }}. COMPANY: {{ ref.company }}
+             OUTCOME: {{ ref.outcome }}
+             RELEVANCE: {{ ref.relevance }}
+          {% endfor %}
 
-          2. EXECUTIVE SUMMARY: The executive_hook text, company summary, industry context.
-             Include a "Key Metrics" row with 3 stats from business_value_summary
-             (e.g. "{{ company_research.business_value_summary.productivity_gain_percent }}% productivity gain",
-             "{{ company_research.business_value_summary.mttr_reduction_percent }}% MTTR reduction",
-             "{{ company_research.business_value_summary.estimated_fte_hours_saved_per_year }} hours saved/year")
+          Design requirements:
+          - Single self-contained HTML file, all CSS in <style> tag
+          - Red Hat colors: primary #EE0000, dark #151515, accent #0066CC
+          - Google Fonts Inter via @import
+          - Fully responsive
+          - Cards with white background, box-shadow, 8px border-radius, 4px left border in Red Hat red
+          - Category badge colors: Infrastructure=#0066CC, Security=#3E8635, Network=#F0AB00, Cloud=#8481DD, AppDev=#EC7A08
+          - Large bold metrics in Red Hat red
+          - Footer: "Prepared by Red Hat | ramzidev.com | Confidential — for discussion purposes only | {{ ansible_date_time.date | default('2026') }}"
 
-          3. TOP 5 AUTOMATION USE CASES: Cards for each of the 5 use cases in automation_use_cases.
-             Each card: title, description, category badge (color-coded by category), hours saved,
-             relevant Ansible collections listed as pills.
-
-          4. QUANTIFIED BUSINESS VALUE: Visual metrics section showing all values from business_value_summary.
-             Include a "What this means for {{ company_research.company_name }}" narrative paragraph.
-
-          5. CUSTOMER REFERENCES: 3 cards from red_hat_customer_references. Each card:
-             company name, outcome (bold), relevance sentence, a "Read case study →" link (href="#").
-
-          6. TECHNOLOGY OVERVIEW: 2-column section — left: "Your Challenges" (bullet list from it_challenges),
-             right: "How AAP Addresses Them" (matching AAP capability for each challenge).
-
-          7. FOOTER: "Prepared by Red Hat | ramzidev.com | Confidential — for discussion purposes only"
-             Current date generated dynamically via JavaScript: document.write(new Date().toLocaleDateString())
-
-          Design details:
-          - Use CSS custom properties (--rh-red, --rh-dark, --rh-blue, --rh-gray, --rh-light)
-          - Section alternates: white and #F5F5F5 backgrounds
-          - Cards: white background, subtle box-shadow, 8px border-radius, 4px left border in Red Hat red
-          - Category badges: color-coded pills (Infrastructure=#0066CC, Security=#3E8635, Network=#F0AB00, Cloud=#8481DD, AppDev=#EC7A08)
-          - Metrics: large bold numbers in Red Hat red, label underneath in gray
-          - Mobile: stack columns, reduce font sizes below 768px
-
-          Return ONLY the complete HTML file content. No explanation, no markdown fences.
-          Start with <!DOCTYPE html> and end with </html>.
+          Return ONLY the complete HTML. Start with <!DOCTYPE html> and end with </html>.
 
     - name: Call OpenAI API for webpage generation
       ansible.builtin.uri:
