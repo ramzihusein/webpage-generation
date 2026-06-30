@@ -82,12 +82,16 @@
 
     - name: Wait for snapd to be ready
       ansible.builtin.pause:
-        seconds: 15
+        seconds: 30
 
     - name: Install certbot via snap
       ansible.builtin.command: snap install --classic certbot
       args:
         creates: /snap/bin/certbot
+      register: certbot_snap
+      retries: 5
+      delay: 15
+      until: certbot_snap.rc == 0
 
     - name: Create certbot symlink
       ansible.builtin.file:
