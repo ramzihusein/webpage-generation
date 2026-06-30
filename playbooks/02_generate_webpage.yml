@@ -112,7 +112,6 @@
         timeout: 90
         status_code: 200
       register: webpage_response
-      no_log: true
 
     - name: Extract HTML content
       ansible.builtin.set_fact:
