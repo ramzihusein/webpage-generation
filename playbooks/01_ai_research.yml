@@ -33,7 +33,7 @@
         research_prompt: |
           You are an expert IT analyst and Red Hat solutions architect. Research the company "{{ customer_name }}"
           and provide a comprehensive technology assessment in valid JSON format only.
-
+          annual_revenue must be a quoted string like "1.2B" or "$1.2 billion", not a bare number with a letter suffix.
           Return ONLY a JSON object (no markdown, no explanation) with exactly these keys:
 
           {
