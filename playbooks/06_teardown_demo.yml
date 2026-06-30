@@ -18,10 +18,10 @@
   gather_facts: false
 
   vars:
-    aws_region: "us-east-1"
+    aws_region: "us-east-2"
     domain_name: "ramzidev.com"
-    s3_bucket_name: "aap-demo-pages-ramzidev"
-    customer_slug: "{{ customer_name | lower | replace(' ', '-') | replace('_', '-') }}"
+    s3_bucket_name: aap-demo-pages-ramzidev-2342
+    customer_slug: "{{ customer_name | lower | replace(' ', '') | replace('-', '') | replace('_', '') }}"
     demo_fqdn: "{{ customer_slug }}.{{ domain_name }}"
 
   tasks:
@@ -85,7 +85,7 @@
     - name: Remove Route 53 DNS record
       amazon.aws.route53:
         state: absent
-        zone: "{{ domain_name }}"
+        hosted_zone_id: "{{ route53_zone_id }}"
         record: "{{ demo_fqdn }}"
         type: A
         ttl: 60
