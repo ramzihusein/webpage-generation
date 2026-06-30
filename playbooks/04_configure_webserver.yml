@@ -90,13 +90,14 @@
       amazon.aws.s3_object:
         bucket: "{{ s3_bucket_name }}"
         object: "{{ s3_page_key }}"
-        dest: "{{ html_dest }}"
+        dest: "/tmp/{{ customer_slug }}_index.html"
         mode: get
         region: "{{ aws_region }}"
 
-    - name: Set correct ownership on HTML file
-      ansible.builtin.file:
-        path: "{{ html_dest }}"
+    - name: Copy HTML page to web server
+      ansible.builtin.copy:
+        src: "/tmp/{{ customer_slug }}_index.html"
+        dest: "{{ html_dest }}"
         owner: nginx
         group: nginx
         mode: '0644'
