@@ -85,7 +85,7 @@
     - name: Remove Route 53 DNS record
       amazon.aws.route53:
         state: absent
-        hosted_zone_id: "{{ route53_zone_id }}"
+        zone: "{{ domain_name }}"
         record: "{{ demo_fqdn }}"
         type: A
         ttl: 60
