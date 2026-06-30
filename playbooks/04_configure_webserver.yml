@@ -93,6 +93,7 @@
         dest: "/tmp/{{ customer_slug }}_index.html"
         mode: get
         region: "{{ aws_region }}"
+      delegate_to: localhost
 
     - name: Copy HTML page to web server
       ansible.builtin.copy:
