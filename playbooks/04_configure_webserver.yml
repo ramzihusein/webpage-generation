@@ -39,21 +39,14 @@
       changed_when: false
       failed_when: false
 
-    - name: Register RHEL with subscription manager
-      community.general.redhat_subscription:
-        state: present
-        username: "{{ rh_username }}"
-        password: "{{ rh_password }}"
-        auto_attach: true
-      when: ansible_distribution == "RedHat"
+    - name: Register RHEL with Red Hat connector
+      ansible.builtin.command: >
+        rhc connect
+        --username {{ rh_username }}
+        --password {{ rh_password }}
+      args:
+        creates: /etc/pki/consumer/cert.pem
       no_log: true
-
-    - name: Enable required repositories
-      community.general.rhsm_repository:
-        name:
-          - rhel-10-for-x86_64-baseos-rpms
-          - rhel-10-for-x86_64-appstream-rpms
-        state: enabled
       when: ansible_distribution == "RedHat"
 
     - name: Install required packages
