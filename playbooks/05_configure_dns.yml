@@ -53,12 +53,15 @@
         overwrite: true
       register: dns_result
 
-    - name: Wait for DNS propagation (check from localhost)
-      ansible.builtin.command: >
-        dig +short {{ demo_fqdn }} @8.8.8.8
-      register: dns_check
-      until: dns_check.stdout.strip() == demo_eip
+    - name: Wait for DNS propagation
+      ansible.builtin.uri:
+        url: "https://dns.google/resolve?name={{ demo_fqdn }}&type=A"
+        return_content: true
+      register: dns_response
+      until: >
+        dns_response.json.Answer is defined and
+        demo_eip in (dns_response.json.Answer | map(attribute='data') | list)
       retries: 20
       delay: 15
-      changed_when: false
       failed_when: false
+      delegate_to: localhost
