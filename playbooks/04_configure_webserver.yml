@@ -209,7 +209,18 @@
           - "HTML deployed from: s3://{{ s3_bucket_name }}/{{ s3_page_key }}"
           - "TLS: {{ 'obtained' if certbot_result is not skipped else 'already existed' }}"
           - "HTTP check status: {{ page_check.status | default('unreachable') }}"
-
+          
+    - name: Print final demo URL
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - " DEMO PAGE READY"
+          - "=========================================="
+          - " Customer:  {{ customer_name }}"
+          - " URL:       https://{{ vhost_fqdn }}"
+          - " IP:        {{ demo_eip }}"
+          - "=========================================="
+          
   handlers:
     - name: Reload nginx
       ansible.builtin.service:
