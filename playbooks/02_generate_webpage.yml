@@ -154,7 +154,8 @@
         object: "{{ customer_slug }}/index.html"
         src: "{{ page_output_path }}"
         mode: put
-        content_type: "text/html; charset=utf-8"
+        headers:
+          Content_Type: "text/html; charset=utf-8"
         region: "{{ aws_region }}"
 
     - name: Set artifact facts for downstream jobs
