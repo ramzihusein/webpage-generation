@@ -46,7 +46,6 @@
         --password {{ rh_password }}
       args:
         creates: /etc/pki/consumer/cert.pem
-      no_log: true
       when: ansible_distribution == "RedHat"
 
     - name: Install required packages
