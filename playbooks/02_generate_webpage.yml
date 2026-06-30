@@ -56,7 +56,7 @@
           max_tokens: 4096
           messages:
             - role: "system"
-              content: "You are an expert web designer. Return only raw HTML. Never use markdown code fences. Never include any text before <!DOCTYPE html> or after </html>. Do NOT use any placeholder syntax like {variable} or {{variable}}. All content must be fully rendered with actual data from the JSON provided. Every section must be complete — do not use comments like repeat for other items. Generate all 5 use case cards and all 3 customer reference cards in full. For the footer date use a hardcoded date string, no JavaScript. You are writing a static HTML file. There is no server, no PHP, no JavaScript templating, no backend. Every piece of text content must be written as literal hardcoded strings directly in the HTML. Never use PHP, template variables, or any server-side syntax."
+              content: "You are an expert web designer. Return only raw HTML. Never use markdown code fences. Never include any text before <!DOCTYPE html> or after </html>. Do NOT use any placeholder syntax or template variables of any kind. All content must be fully rendered with actual data from the JSON provided. Every section must be complete — do not use comments like repeat for other items. Generate all 5 use case cards and all 3 customer reference cards in full. For the footer date use a hardcoded date string, no JavaScript. You are writing a static HTML file. There is no server, no PHP, no JavaScript templating, no backend. Every piece of text content must be written as literal hardcoded strings directly in the HTML. Never use PHP, template variables, or any server-side syntax."
             - role: "user"
               content: "{{ webpage_prompt }}"
         timeout: 90
