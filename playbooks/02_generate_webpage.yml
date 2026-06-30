@@ -40,57 +40,7 @@
 
     - name: Build webpage generation prompt
       ansible.builtin.set_fact:
-        webpage_prompt: |
-          Generate a complete single-file HTML page. Use ONLY the data below.
-          Do NOT use any placeholder syntax like {variable} or {{variable}}.
-          Write out every value explicitly in the HTML.
-          Generate ALL 5 use case cards and ALL 3 customer reference cards in full.
-          No comments like "repeat for other items".
-
-          COMPANY: {{ company_research.company_name }}
-          INDUSTRY: {{ company_research.industry }}
-          EXECUTIVE HOOK: {{ company_research.executive_hook }}
-          COMPANY SUMMARY: {{ company_research.company_summary }}
-          EMPLOYEE COUNT: {{ company_research.employee_count }}
-          ANNUAL REVENUE: {{ company_research.annual_revenue }}
-          PRODUCTIVITY GAIN: {{ company_research.business_value_summary.productivity_gain_percent }}%
-          MTTR REDUCTION: {{ company_research.business_value_summary.mttr_reduction_percent }}%
-          HOURS SAVED: {{ company_research.business_value_summary.estimated_fte_hours_saved_per_year }}
-          DEPLOYMENT FREQUENCY INCREASE: {{ company_research.business_value_summary.deployment_frequency_increase_percent }}%
-          KEY VALUE STATEMENT: {{ company_research.business_value_summary.key_value_statement }}
-
-          IT CHALLENGES:
-          {% for challenge in company_research.it_challenges %}
-          - {{ challenge }}
-          {% endfor %}
-
-          USE CASES:
-          {% for uc in company_research.automation_use_cases %}
-          {{ loop.index }}. TITLE: {{ uc.title }}
-             DESCRIPTION: {{ uc.description }}
-             CATEGORY: {{ uc.category }}
-             HOURS SAVED: {{ uc.estimated_hours_saved_per_year }}
-             COLLECTIONS: {{ uc.ansible_collections | join(', ') }}
-          {% endfor %}
-
-          CUSTOMER REFERENCES:
-          {% for ref in company_research.red_hat_customer_references %}
-          {{ loop.index }}. COMPANY: {{ ref.company }}
-             OUTCOME: {{ ref.outcome }}
-             RELEVANCE: {{ ref.relevance }}
-          {% endfor %}
-
-          Design requirements:
-          - Single self-contained HTML file, all CSS in <style> tag
-          - Red Hat colors: primary #EE0000, dark #151515, accent #0066CC
-          - Google Fonts Inter via @import
-          - Fully responsive
-          - Cards with white background, box-shadow, 8px border-radius, 4px left border in Red Hat red
-          - Category badge colors: Infrastructure=#0066CC, Security=#3E8635, Network=#F0AB00, Cloud=#8481DD, AppDev=#EC7A08
-          - Large bold metrics in Red Hat red
-          - Footer: "Prepared by Red Hat | ramzidev.com | Confidential — for discussion purposes only | {{ ansible_date_time.date | default('2026') }}"
-
-          Return ONLY the complete HTML. Start with <!DOCTYPE html> and end with </html>.
+        webpage_prompt: "Generate a complete single-file HTML page using ONLY the data provided below. Do NOT use any placeholder syntax like {variable}. Write every value explicitly in the HTML. Generate ALL 5 use case cards and ALL 3 customer reference cards in full. No comments like repeat for other items. Here is the company data as JSON: {{ company_research | to_json }} Design requirements: single self-contained HTML file all CSS in style tag, Red Hat colors primary #EE0000 dark #151515 accent #0066CC, Google Fonts Inter via @import, fully responsive, cards with white background box-shadow 8px border-radius 4px left border in Red Hat red, category colors Infrastructure=#0066CC Security=#3E8635 Network=#F0AB00 Cloud=#8481DD AppDev=#EC7A08, large bold metrics in Red Hat red, footer says Prepared by Red Hat ramzidev.com Confidential for discussion purposes only. Return ONLY complete HTML starting with <!DOCTYPE html> and ending with </html>."
 
     - name: Call OpenAI API for webpage generation
       ansible.builtin.uri:
