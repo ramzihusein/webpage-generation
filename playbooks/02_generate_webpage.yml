@@ -126,20 +126,25 @@
         mode: '0644'
 
     - name: Create S3 bucket for demo pages (idempotent)
-      amazon.aws.s3_bucket:
-        name: "{{ s3_bucket_name }}"
-        region: "{{ aws_region }}"
-        endpoint_url: "https://s3.{{ aws_region }}.amazonaws.com"
-        state: present
-        public_access:
-          block_public_acls: false
-          block_public_policy: false
-          ignore_public_acls: false
-          restrict_public_buckets: false
-        tags:
-          Project: "aap-demo"
-          ManagedBy: "ansible"
-      register: s3_bucket_result
+      ansible.builtin.command: >
+        aws s3api create-bucket
+        --bucket {{ s3_bucket_name }}
+        --region {{ aws_region }}
+        --create-bucket-configuration LocationConstraint={{ aws_region }}
+      register: create_bucket_result
+      failed_when:
+        - create_bucket_result.rc != 0
+        - "'BucketAlreadyOwnedByYou' not in create_bucket_result.stderr"
+      changed_when: "'Location' in create_bucket_result.stdout"
+
+    - name: Block all public access on bucket
+      ansible.builtin.command: >
+        aws s3api put-public-access-block
+        --bucket {{ s3_bucket_name }}
+        --region {{ aws_region }}
+        --public-access-block-configuration
+        BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false
+      changed_when: false
 
     - name: Upload HTML page to S3
       amazon.aws.s3_object:
