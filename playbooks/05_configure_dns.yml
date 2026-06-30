@@ -62,38 +62,3 @@
       delay: 15
       changed_when: false
       failed_when: false
-
-    - name: Verify demo page is reachable at final URL
-      ansible.builtin.uri:
-        url: "http://{{ demo_fqdn }}"
-        follow_redirects: all
-        status_code: 200
-        timeout: 20
-      register: final_check
-      retries: 5
-      delay: 10
-      until: final_check.status == 200
-      failed_when: false
-
-    - name: Set final workflow artifact
-      ansible.builtin.set_stats:
-        data:
-          demo_url: "https://{{ demo_fqdn }}"
-          demo_url_http: "http://{{ demo_fqdn }}"
-          customer_name: "{{ customer_name }}"
-          customer_slug: "{{ customer_slug }}"
-          demo_eip: "{{ demo_eip }}"
-      delegate_to: localhost
-
-    - name: Print final demo URL
-      ansible.builtin.debug:
-        msg:
-          - "=========================================="
-          - " DEMO PAGE READY"
-          - "=========================================="
-          - " Customer:  {{ customer_name }}"
-          - " URL:       https://{{ demo_fqdn }}"
-          - " IP:        {{ demo_eip }}"
-          - " DNS:       {{ 'propagated' if dns_check.stdout.strip() == demo_eip else 'propagating (may take 1-2 min)' }}"
-          - " HTTP:      {{ 'reachable' if final_check.status | default(0) == 200 else 'DNS still propagating' }}"
-          - "=========================================="
