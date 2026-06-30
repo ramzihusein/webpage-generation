@@ -51,7 +51,6 @@
         ttl: "{{ dns_ttl }}"
         value: "{{ demo_eip }}"
         overwrite: true
-        comment: "AAP demo page for {{ customer_name }} — managed by Ansible"
       register: dns_result
 
     - name: Wait for DNS propagation (check from localhost)
