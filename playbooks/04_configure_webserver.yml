@@ -20,7 +20,7 @@
 #   certbot_email:    "your@email.com"
 
 - name: Web server configuration — nginx + TLS + deploy demo page
-  hosts: "tag_CustomerSlug_{{ customer_slug }}"
+  hosts: all
   become: true
   gather_facts: true
 
